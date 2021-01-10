@@ -38,6 +38,8 @@
   gEfiPayLoadHobBasePpiGuid = { 0xdbe23aa1, 0xa342, 0x4b97, {0x85, 0xb6, 0xb2, 0x26, 0xf1, 0x61, 0x73, 0x89} }
 
 [Protocols]
+
+  gEdkiiPlatformVTdPolicyProtocolGuid = { 0x3d17e448, 0x466, 0x4e20, { 0x99, 0x9f, 0xb2, 0xe1, 0x34, 0x88, 0xee, 0x22 }}
   #
   # Gop Temp
   #
@@ -70,3 +72,7 @@ gUefiPayloadPkgTokenSpaceGuid.PcdMemoryTypeEfiRuntimeServicesCode|0x80|UINT32|0x
 
 # Size of the region used by UEFI in permanent memory
 gUefiPayloadPkgTokenSpaceGuid.PcdSystemMemoryUefiRegionSize|0x02000000|UINT32|0x00000017
+
+# VTd driver setting
+gUefiPayloadPkgTokenSpaceGuid.PcdErrorCodeVTdError|0x02008000|UINT32|0x00000005
+gUefiPayloadPkgTokenSpaceGuid.PcdVTdPolicyPropertyMask|1|UINT8|0x00000003

@@ -180,6 +180,12 @@ INF MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBusDxe.inf
 INF MdeModulePkg/Bus/Usb/UsbKbDxe/UsbKbDxe.inf
 INF MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassStorageDxe.inf
 
+#
+# Intel VT-d driver
+#
+!if $(INTEL_VTD_SUPPORT)
+INF UefiPayloadPkg/IntelVTdDxe/IntelVTdDxe.inf
+!endif
 
 #
 # Shell
