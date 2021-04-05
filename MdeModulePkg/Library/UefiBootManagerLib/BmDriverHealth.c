@@ -448,7 +448,10 @@ BmRepairAllControllers (
   }
 
   Status = gBS->LocateProtocol (&gEfiFormBrowser2ProtocolGuid, NULL, (VOID **) &FormBrowser2);
-  ASSERT_EFI_ERROR (Status);
+  // IgnoreRepair Controller if SetupBrowswer is not there.
+  if (EFI_ERROR(Status)) {
+    return;
+  }
 
   MaxRepairCount = PcdGet32 (PcdMaxRepairCount);
   RepairCount = 0;
