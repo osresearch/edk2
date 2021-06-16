@@ -148,6 +148,9 @@ INF MdeModulePkg/Universal/Console/TerminalDxe/TerminalDxe.inf
 !endif
 INF UefiPayloadPkg/GraphicsOutputDxe/GraphicsOutputDxe.inf
 
+INF  OvmfPkg/QemuVideoDxe/QemuVideoDxe.inf
+INF  OvmfPkg/QemuRamfbDxe/QemuRamfbDxe.inf
+
 #
 # SCSI/ATA/IDE/DISK Support
 #
