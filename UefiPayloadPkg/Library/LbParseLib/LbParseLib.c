@@ -23,10 +23,19 @@
 UefiPayloadConfig* GetUefiPayLoadConfig() {
   UefiPayloadConfig* config =
       (UefiPayloadConfig*)(UINTN)(PcdGet32(PcdPayloadFdMemBase) - SIZE_64KB);
+
+  DEBUG((DEBUG_INFO, "UefiPayloadConfig: %016lx: ", (unsigned long) config));
+  for(int i = 0 ; i < 32 ; i++)
+  {
+    DEBUG((DEBUG_INFO, "%02x", i[(const unsigned char *) config]));
+  }
+  DEBUG((DEBUG_INFO, "\n"));
+  
   if (config->Version != UEFI_PAYLOAD_CONFIG_VERSION) {
     DEBUG((DEBUG_ERROR, "Expect payload config version: %d, but get %d\n",
            UEFI_PAYLOAD_CONFIG_VERSION, config->Version));
-    CpuDeadLoop ();
+    //CpuDeadLoop ();
+    return NULL;
   }
   return config;
 }
@@ -71,6 +80,10 @@ ParseMemoryInfo(IN BL_MEM_INFO_CALLBACK MemInfoCallback, IN VOID* Params) {
   int i;
 
   config = GetUefiPayLoadConfig();
+  if (!config) {
+    DEBUG((DEBUG_ERROR, "ParseMemoryInfo: Could not find UEFI Payload config\n"));
+    return RETURN_SUCCESS;
+  }
 
   DEBUG((DEBUG_INFO, "MemoryMap #entries: %d\n", config->NumMemoryMapEntries));
 
@@ -99,6 +112,11 @@ ParseSystemTable(OUT SYSTEM_TABLE_INFO* SystemTableInfo) {
   UefiPayloadConfig* config;
 
   config = GetUefiPayLoadConfig();
+  if (!config) {
+    DEBUG((DEBUG_ERROR, "ParseSystemTable: Could not find UEFI Payload config\n"));
+    return RETURN_SUCCESS;
+  }
+
   SystemTableInfo->AcpiTableBase = config->AcpiBase;
   SystemTableInfo->AcpiTableSize = config->AcpiSize;
 
@@ -122,6 +140,17 @@ EFIAPI
 ParseSerialInfo(OUT SERIAL_PORT_INFO* SerialPortInfo) {
   UefiPayloadConfig* config;
   config = GetUefiPayLoadConfig();
+
+  if (!config) {
+    DEBUG((DEBUG_ERROR, "ParseSerialInfo: using default config\n"));
+    SerialPortInfo->BaseAddr = 0x3f8;
+    SerialPortInfo->RegWidth = 1;
+    SerialPortInfo->Type = 1; // uefi.SerialPortTypeIO
+    SerialPortInfo->Baud = 115200;
+    SerialPortInfo->InputHertz = 1843200;
+    SerialPortInfo->UartPciAddr = 0;
+    return RETURN_SUCCESS;
+  }
 
   SerialPortInfo->BaseAddr = config->SerialConfig.BaseAddr;
   SerialPortInfo->RegWidth = config->SerialConfig.RegWidth;
