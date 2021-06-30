@@ -19,16 +19,45 @@
 #include <Linuxboot.h>
 #include <Uefi/UefiBaseType.h>
 
+#include <stdlib.h>
+#include <stdint.h>
+//#include <string.h>
+//#include <ctype.h>
+
+#define strncmp(a,b,n) AsciiStrnCmp((a),(b),(n))
+
+static uint64_t parse_int(const char * s, char ** end)
+{
+  UINT64 x;
+
+  if (s[0] == '0' && s[1] == 'x')
+    AsciiStrHexToUint64S(s, end, &x);
+  else
+    AsciiStrDecimalToUint64S(s, end, &x);
+
+  return x;
+}
+
+static int isspace(const char c)
+{
+  return c == ' ' || c == '\t' || c == '\n';
+}
+
+
 // Retrieve UefiPayloadConfig from Linuxboot's uefiboot
-UefiPayloadConfig* GetUefiPayLoadConfig() {
-  UefiPayloadConfig* config =
+const UefiPayloadConfig* GetUefiPayLoadConfig() {
+  const UefiPayloadConfig* config =
       (UefiPayloadConfig*)(UINTN)(PcdGet32(PcdPayloadFdMemBase) - SIZE_64KB);
-  if (config->Version != UEFI_PAYLOAD_CONFIG_VERSION) {
-    DEBUG((DEBUG_ERROR, "Expect payload config version: %d, but get %d\n",
-           UEFI_PAYLOAD_CONFIG_VERSION, config->Version));
-    CpuDeadLoop ();
-  }
-  return config;
+
+  if (config->Version == UEFI_PAYLOAD_CONFIG_VERSION1
+  ||  config->Version == UEFI_PAYLOAD_CONFIG_VERSION2)
+    return config;
+
+  DEBUG((DEBUG_ERROR, "Expect payload config version %016lx or %016lx, but get %016lx\n",
+         UEFI_PAYLOAD_CONFIG_VERSION1, UEFI_PAYLOAD_CONFIG_VERSION2, config->Version));
+  CpuDeadLoop ();
+  while(1)
+    ;
 }
 
 // Align the address and add memory rang to MemInfoCallback
@@ -54,6 +83,71 @@ void AddMemoryRange(IN BL_MEM_INFO_CALLBACK MemInfoCallback, IN UINTN start,
   MemInfoCallback(&MemoryMap, NULL);
 }
 
+const char * cmdline_next(const char *cmdline, const char **option)
+{
+	// at the end of the string, we're done
+	if (!cmdline || *cmdline == '\0')
+		return NULL;
+
+	// skip any leading whitespace
+	while(isspace(*cmdline))
+		cmdline++;
+
+	// if we've hit the end of the string, we're done
+	if (*cmdline == '\0')
+		return NULL;
+
+	*option = cmdline;
+
+	// find the end of this option or the string
+	while(!isspace(*cmdline) && *cmdline != '\0')
+		cmdline++;
+
+	// cmdline points to the whitespace or end of string
+	return cmdline;
+}
+
+int cmdline_ints(const char *option, uint64_t args[], int max)
+{
+  // skip any leading text up to an '='
+  const char * s = option;
+  while (1)
+  {
+    const char c = *s++;
+    if (c == '=')
+      break;
+
+    if (c == '\0' || isspace(c))
+    {
+      s = option;
+      break;
+    }
+  }
+
+  for(int i = 0 ; i < max ; i++)
+  {
+    char * end;
+    args[i] = parse_int(s, &end);
+
+    // end of string or end of the option?
+    if (*end == '\0' || isspace(*end))
+      return i+1;
+
+    // not separator? signal an error if we have consumed any ints,
+    // otherwise return 0 saying that none were found
+    if (*end != ',')
+      return i == 0 ? 0 : -1;
+
+    // skip the , and get the next value
+    s = end + 1;
+  }
+
+  // too many values!
+  return -1;
+}
+
+
+
 /**
   Acquire the memory information from the linuxboot table in memory.
 
@@ -67,20 +161,53 @@ void AddMemoryRange(IN BL_MEM_INFO_CALLBACK MemInfoCallback, IN UINTN start,
 RETURN_STATUS
 EFIAPI
 ParseMemoryInfo(IN BL_MEM_INFO_CALLBACK MemInfoCallback, IN VOID* Params) {
-  UefiPayloadConfig* config;
-  int i;
-
-  config = GetUefiPayLoadConfig();
-
-  DEBUG((DEBUG_INFO, "MemoryMap #entries: %d\n", config->NumMemoryMapEntries));
-
-  MemoryMapEntry* entry = &config->MemoryMapEntries[0];
-  for (i = 0; i < config->NumMemoryMapEntries; i++) {
-    DEBUG((DEBUG_INFO, "Start: 0x%lx End: 0x%lx Type:%d\n", entry->Start,
-           entry->End, entry->Type));
-    AddMemoryRange(MemInfoCallback, entry->Start, entry->End, entry->Type);
-    entry++;
+  const UefiPayloadConfig* config = GetUefiPayLoadConfig();
+  if (!config) {
+    DEBUG((DEBUG_ERROR, "ParseMemoryInfo: Could not find UEFI Payload config\n"));
+    return RETURN_SUCCESS;
   }
+
+  if (config->Version == UEFI_PAYLOAD_CONFIG_VERSION1)
+  {
+    const UefiPayloadConfigV1 * config1 = &config->config.v1;
+    DEBUG((DEBUG_INFO, "MemoryMap #entries: %d\n", config1->NumMemoryMapEntries));
+
+    for (int i = 0; i < config1->NumMemoryMapEntries; i++) {
+      const MemoryMapEntry* entry = &config1->MemoryMapEntries[i];
+      DEBUG((DEBUG_INFO, "Start: 0x%lx End: 0x%lx Type:%d\n", entry->Start,
+             entry->End, entry->Type));
+      AddMemoryRange(MemInfoCallback, entry->Start, entry->End, entry->Type);
+    }
+  } else
+
+  if (config->Version == UEFI_PAYLOAD_CONFIG_VERSION2)
+  {
+    const char * cmdline = config->config.v2.cmdline;
+    const char * option;
+    uint64_t args[3];
+
+    // look for the mem=start,end,type 
+    while((cmdline = cmdline_next(cmdline, &option)))
+    {
+      if (strncmp(option, "mem=", 4) != 0)
+        continue;
+
+      if (cmdline_ints(option, args, 3) != 3)
+      {
+        DEBUG((DEBUG_ERROR, "Parse error: '%a'\n", option));
+        continue;
+      }
+
+      const uint64_t start = args[0];
+      const uint64_t end = args[1];
+      const uint64_t type = args[2];
+
+      DEBUG((DEBUG_INFO, "Start: 0x%lx End: 0x%lx Type:%d\n",
+             start, end, type));
+      AddMemoryRange(MemInfoCallback, start, end, type);
+    }
+  }
+
   return RETURN_SUCCESS;
 }
 
@@ -96,14 +223,62 @@ ParseMemoryInfo(IN BL_MEM_INFO_CALLBACK MemInfoCallback, IN VOID* Params) {
 RETURN_STATUS
 EFIAPI
 ParseSystemTable(OUT SYSTEM_TABLE_INFO* SystemTableInfo) {
-  UefiPayloadConfig* config;
+  const UefiPayloadConfig* config = GetUefiPayLoadConfig();
+  if (!config) {
+    DEBUG((DEBUG_ERROR, "ParseSystemTable: Could not find UEFI Payload config\n"));
+    return RETURN_SUCCESS;
+  }
 
-  config = GetUefiPayLoadConfig();
-  SystemTableInfo->AcpiTableBase = config->AcpiBase;
-  SystemTableInfo->AcpiTableSize = config->AcpiSize;
+  if (config->Version == UEFI_PAYLOAD_CONFIG_VERSION1)
+  {
+    const UefiPayloadConfigV1 * config1 = &config->config.v1;
+    SystemTableInfo->AcpiTableBase = config1->AcpiBase;
+    SystemTableInfo->AcpiTableSize = config1->AcpiSize;
 
-  SystemTableInfo->SmbiosTableBase = config->SmbiosBase;
-  SystemTableInfo->SmbiosTableSize = config->SmbiosSize;
+    SystemTableInfo->SmbiosTableBase = config1->SmbiosBase;
+    SystemTableInfo->SmbiosTableSize = config1->SmbiosSize;
+  } else
+
+  if (config->Version == UEFI_PAYLOAD_CONFIG_VERSION2)
+  {
+    const char * cmdline = config->config.v2.cmdline;
+    const char * option;
+    uint64_t args[2];
+
+    // look for the acpi config
+    while((cmdline = cmdline_next(cmdline, &option)))
+    {
+      if (strncmp(option, "ACPI20=", 7) == 0)
+      {
+        const int count = cmdline_ints(option, args, 2);
+        if (count < 0)
+        {
+          DEBUG((DEBUG_ERROR, "Parse error: '%a'\n", option));
+          continue;
+        }
+
+        if (count > 0)
+          SystemTableInfo->AcpiTableBase = args[0];
+        if (count > 1)
+          SystemTableInfo->AcpiTableSize = args[1];
+      }
+
+      if (strncmp(option, "SMBIOS=", 7) == 0)
+      {
+        const int count = cmdline_ints(option, args, 2);
+        if (count < 0)
+        {
+          DEBUG((DEBUG_ERROR, "Parse error: '%a'\n", option));
+          continue;
+        }
+
+        if (count > 0)
+          SystemTableInfo->SmbiosTableBase = args[0];
+        if (count > 1)
+          SystemTableInfo->SmbiosTableSize = args[1];
+      }
+    }
+  }
 
   return RETURN_SUCCESS;
 }
@@ -120,15 +295,64 @@ ParseSystemTable(OUT SYSTEM_TABLE_INFO* SystemTableInfo) {
 RETURN_STATUS
 EFIAPI
 ParseSerialInfo(OUT SERIAL_PORT_INFO* SerialPortInfo) {
-  UefiPayloadConfig* config;
-  config = GetUefiPayLoadConfig();
 
-  SerialPortInfo->BaseAddr = config->SerialConfig.BaseAddr;
-  SerialPortInfo->RegWidth = config->SerialConfig.RegWidth;
-  SerialPortInfo->Type = config->SerialConfig.Type;
-  SerialPortInfo->Baud = config->SerialConfig.Baud;
-  SerialPortInfo->InputHertz = config->SerialConfig.InputHertz;
-  SerialPortInfo->UartPciAddr = config->SerialConfig.UartPciAddr;
+  // fill in some reasonable defaults
+  SerialPortInfo->BaseAddr = 0x3f8;
+  SerialPortInfo->RegWidth = 1;
+  SerialPortInfo->Type = 1; // uefi.SerialPortTypeIO
+  SerialPortInfo->Baud = 115200;
+  SerialPortInfo->InputHertz = 1843200;
+  SerialPortInfo->UartPciAddr = 0;
+
+  const UefiPayloadConfig* config = GetUefiPayLoadConfig();
+  if (!config) {
+    DEBUG((DEBUG_ERROR, "ParseSerialInfo: using default config\n"));
+    return RETURN_SUCCESS;
+  }
+
+  if (config->Version == UEFI_PAYLOAD_CONFIG_VERSION1)
+  {
+    const UefiPayloadConfigV1 * config1 = &config->config.v1;
+    SerialPortInfo->BaseAddr = config1->SerialConfig.BaseAddr;
+    SerialPortInfo->RegWidth = config1->SerialConfig.RegWidth;
+    SerialPortInfo->Type = config1->SerialConfig.Type;
+    SerialPortInfo->Baud = config1->SerialConfig.Baud;
+    SerialPortInfo->InputHertz = config1->SerialConfig.InputHertz;
+    SerialPortInfo->UartPciAddr = config1->SerialConfig.UartPciAddr;
+  } else
+
+  if (config->Version == UEFI_PAYLOAD_CONFIG_VERSION2)
+  {
+    const char * cmdline = config->config.v2.cmdline;
+    const char * option;
+    uint64_t args[6] = {};
+
+    while( (cmdline = cmdline_next(cmdline, &option)) )
+    {
+      if (strncmp(option, "serial=", 7) != 0)
+        continue;
+    
+      const int count = cmdline_ints(option, args, 6);
+      if (count < 0)
+      {
+         DEBUG((DEBUG_ERROR, "Parse error: %a\n", option));
+         continue;
+      }
+
+      if (count > 0)
+        SerialPortInfo->Baud = args[0];
+      if (count > 1)
+        SerialPortInfo->BaseAddr = args[1];
+      if (count > 2)
+        SerialPortInfo->RegWidth = args[2];
+      if (count > 3)
+        SerialPortInfo->Type = args[3];
+      if (count > 4)
+        SerialPortInfo->InputHertz = args[4];
+      if (count > 5)
+        SerialPortInfo->UartPciAddr = args[5];
+    }
+  }
 
   return RETURN_SUCCESS;
 }

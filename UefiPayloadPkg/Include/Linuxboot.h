@@ -24,8 +24,7 @@ typedef struct MemoryMapEntryStruct {
   UINT32 Type;
 } MemoryMapEntry;
 
-typedef struct UefiPayloadConfigStruct {
-  UINT64 Version;
+typedef struct {
   UINT64 AcpiBase;
   UINT64 AcpiSize;
   UINT64 SmbiosBase;
@@ -33,10 +32,22 @@ typedef struct UefiPayloadConfigStruct {
   SerialPortConfig SerialConfig;
   UINT32 NumMemoryMapEntries;
   MemoryMapEntry MemoryMapEntries[0];
+} UefiPayloadConfigV1;
+
+typedef struct UefiPayloadConfigStruct {
+  UINT64 Version;
+  union {
+    UefiPayloadConfigV1 v1;
+    struct {
+      char cmdline[0]; // up to 64 KB
+    } v2;
+  } config;
 } UefiPayloadConfig;
 #pragma pack()
 
-#define UEFI_PAYLOAD_CONFIG_VERSION 1
+// magic version config is "LnxBoot1"
+#define UEFI_PAYLOAD_CONFIG_VERSION1 1
+#define UEFI_PAYLOAD_CONFIG_VERSION2 0x31746f6f42786e4cULL
 
 #define LINUXBOOT_MEM_RAM 1
 #define LINUXBOOT_MEM_DEFAULT 2
