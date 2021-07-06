@@ -357,6 +357,13 @@
   gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwSpareBase|0
   gEfiMdePkgTokenSpaceGuid.PcdPlatformBootTimeOut|3
 
+  gUefiOvmfPkgTokenSpaceGuid.PcdOvmfHostBridgePciDevId|0x29c0
+  gUefiOvmfPkgTokenSpaceGuid.PcdPciIoBase|0x0
+  gUefiOvmfPkgTokenSpaceGuid.PcdPciIoSize|0x0
+  gUefiOvmfPkgTokenSpaceGuid.PcdPciMmio32Base|0x0
+  gUefiOvmfPkgTokenSpaceGuid.PcdPciMmio32Size|0x0
+  gUefiOvmfPkgTokenSpaceGuid.PcdPciMmio64Base|0x0
+
   ## This PCD defines the video horizontal resolution.
   #  This PCD could be set to 0 then video resolution could be at highest resolution.
   gEfiMdeModulePkgTokenSpaceGuid.PcdVideoHorizontalResolution|0
@@ -470,6 +477,7 @@
   MdeModulePkg/Universal/Disk/DiskIoDxe/DiskIoDxe.inf
   MdeModulePkg/Universal/Disk/PartitionDxe/PartitionDxe.inf
   MdeModulePkg/Universal/Disk/UnicodeCollation/EnglishDxe/EnglishDxe.inf
+  MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskDxe.inf
   FatPkg/EnhancedFatDxe/Fat.inf
   MdeModulePkg/Bus/Pci/SataControllerDxe/SataControllerDxe.inf
   MdeModulePkg/Bus/Ata/AtaBusDxe/AtaBusDxe.inf
@@ -521,6 +529,10 @@
   MdeModulePkg/Universal/Console/TerminalDxe/TerminalDxe.inf
 !endif
   UefiPayloadPkg/GraphicsOutputDxe/GraphicsOutputDxe.inf
+
+  OvmfPkg/QemuVideoDxe/QemuVideoDxe.inf
+  UefiPayloadPkg/BlSupportDxe/BlSupportDxe.inf
+
 
   #------------------------------
   #  Build the shell
