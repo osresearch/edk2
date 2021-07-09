@@ -40,6 +40,7 @@
   BaseMemoryLib
   UefiLib
   HobLib
+  DevicePathLib
 
 [Guids]
   gEfiAcpiTableGuid
@@ -48,6 +49,10 @@
   gUefiSystemTableInfoGuid
   gUefiAcpiBoardInfoGuid
   gEfiGraphicsInfoHobGuid
+  gEfiVirtualDiskGuid ## CONSUMES
+
+[Protocols]
+  gEfiRamDiskProtocolGuid ## SOMETIMES_CONSUMES
 
 [Pcd]
   gEfiMdeModulePkgTokenSpaceGuid.PcdVideoHorizontalResolution

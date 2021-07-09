@@ -8,6 +8,11 @@
 **/
 #include "BlSupportDxe.h"
 
+#include <Protocol/DevicePath.h>
+#include <Library/DevicePathLib.h>
+#include <Protocol/RamDisk.h>
+#include <Library/MemoryAllocationLib.h>
+
 /**
   Reserve MMIO/IO resource in GCD
 
@@ -77,6 +82,60 @@ ReserveResourceInGcd (
     ASSERT_EFI_ERROR (Status);
   }
   return Status;
+}
+
+
+static void EFIAPI ramdisk_callback(EFI_EVENT event, void * context)
+{
+  const SYSTEM_TABLE_INFO *SystemTableInfo = context;
+  const unsigned char * ramdisk_base = (const void*) SystemTableInfo->RamDiskBase;
+  const UINTN ramdisk_size = SystemTableInfo->RamDiskSize;
+
+  if (!ramdisk_base || !ramdisk_size)
+    return;
+
+  EFI_STATUS                 Status;
+  EFI_RAM_DISK_PROTOCOL      *RamDisk;
+  EFI_DEVICE_PATH_PROTOCOL   *DevicePath;
+  EFI_GUID                   *RamDiskType = &gEfiVirtualDiskGuid;
+
+  Status = gBS->LocateProtocol(&gEfiRamDiskProtocolGuid, NULL, (VOID**) &RamDisk);
+  // if there is no protocol, we've been signalled too early. we'll try again later
+  if (EFI_ERROR (Status))
+    return;
+
+  // it is necessary to copy the ramdisk from the kexec allocated memory to uefi allocated
+  // memory. otherwise the memory will be reclaimed during the boot process, leading to
+  // a corrupt BCD hive or other propblems.
+  const unsigned char * ramdisk_copy = AllocateCopyPool(ramdisk_size, (const void*) ramdisk_base);
+  if (!ramdisk_copy)
+  {
+    DEBUG((EFI_D_ERROR, "allocate %d bytes for ramdisk copy failed\n", ramdisk_size));
+    return;
+  }
+
+/*
+  for(int i = 0x200 ; i < 0x240 ; i++)
+    DEBUG ((EFI_D_INFO, "%02x", ramdisk_base[i]));
+  DEBUG ((EFI_D_INFO, "\n"));
+*/
+
+  Status = RamDisk->Register(
+       (UINTN) ramdisk_copy,
+       ramdisk_size,
+       RamDiskType,
+       NULL,
+       &DevicePath
+  );
+
+  if (EFI_ERROR (Status)) {
+    DEBUG ((EFI_D_ERROR, "ramdisk_setup: Failed to register RAM Disk - %r\n", Status));
+    return;
+  }
+
+  VOID * Temp = ConvertDevicePathToText(DevicePath, TRUE, TRUE);
+  DEBUG ((EFI_D_INFO, "ramdisk_setup: ram disk %p + %x: device path %S\n", ramdisk_copy, ramdisk_size, Temp));
+  FreePool(Temp);
 }
 
 
@@ -179,6 +238,17 @@ BlDxeEntryPoint (
     Status = PcdSet64S (PcdPciExpressBaseSize, AcpiBoardInfo->PcieBaseSize);
     ASSERT_EFI_ERROR (Status);
   }
+
+  // Wait for the RamDiskProtocol to become available
+  static EFI_EVENT ramdisk_event;
+  static void * ramdisk_registration;
+
+  Status = gBS->CreateEvent(EVT_NOTIFY_SIGNAL, TPL_CALLBACK, ramdisk_callback, SystemTableInfo, &ramdisk_event);
+  ASSERT_EFI_ERROR(Status);
+  Status = gBS->RegisterProtocolNotify(&gEfiRamDiskProtocolGuid, ramdisk_event, &ramdisk_registration);
+  ASSERT_EFI_ERROR(Status);
+  Status = gBS->SignalEvent(ramdisk_event);
+  ASSERT_EFI_ERROR(Status);
 
   return EFI_SUCCESS;
 }
