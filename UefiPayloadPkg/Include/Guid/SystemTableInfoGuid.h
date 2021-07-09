@@ -21,6 +21,8 @@ typedef struct {
   UINT32    AcpiTableSize;
   UINT64    SmbiosTableBase;
   UINT32    SmbiosTableSize;
+  UINT64    RamDiskBase;
+  UINT32    RamDiskSize;
 } SYSTEM_TABLE_INFO;
 
 #endif

@@ -55,9 +55,13 @@ const UefiPayloadConfig* GetUefiPayLoadConfig() {
 
   DEBUG((DEBUG_ERROR, "Expect payload config version %016lx or %016lx, but get %016lx\n",
          UEFI_PAYLOAD_CONFIG_VERSION1, UEFI_PAYLOAD_CONFIG_VERSION2, config->Version));
+#if 0
   CpuDeadLoop ();
   while(1)
     ;
+#else
+  return NULL;
+#endif
 }
 
 // Align the address and add memory rang to MemInfoCallback
@@ -189,7 +193,8 @@ ParseMemoryInfo(IN BL_MEM_INFO_CALLBACK MemInfoCallback, IN VOID* Params) {
     // look for the mem=start,end,type 
     while((cmdline = cmdline_next(cmdline, &option)))
     {
-      if (strncmp(option, "mem=", 4) != 0)
+      if (strncmp(option, "mem=", 4) != 0
+      &&  strncmp(option, "ramdisk=", 8) != 0)
         continue;
 
       if (cmdline_ints(option, args, 3) != 3)
@@ -243,7 +248,7 @@ ParseSystemTable(OUT SYSTEM_TABLE_INFO* SystemTableInfo) {
   {
     const char * cmdline = config->config.v2.cmdline;
     const char * option;
-    uint64_t args[2];
+    uint64_t args[3];
 
     // look for the acpi config
     while((cmdline = cmdline_next(cmdline, &option)))
@@ -276,6 +281,21 @@ ParseSystemTable(OUT SYSTEM_TABLE_INFO* SystemTableInfo) {
           SystemTableInfo->SmbiosTableBase = args[0];
         if (count > 1)
           SystemTableInfo->SmbiosTableSize = args[1];
+      }
+
+      if (strncmp(option, "ramdisk=", 8) == 0)
+      {
+        const int count = cmdline_ints(option, args, 3);
+        if (count < 0)
+        {
+          DEBUG((DEBUG_ERROR, "Parse error: '%a'\n", option));
+          continue;
+        }
+
+        if (count > 0)
+          SystemTableInfo->RamDiskBase = args[0];
+        if (count > 1)
+          SystemTableInfo->RamDiskSize = args[1];
       }
     }
   }
